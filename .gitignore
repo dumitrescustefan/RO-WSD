@@ -1,3 +1,4 @@
+.idea/
 model/*.json
 model/lightning_logs/
 
