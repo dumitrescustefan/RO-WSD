@@ -13,7 +13,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class WSD(pl.LightningModule):
-    def __init__(self, model="dumitrescustefan/bert-base-romanian-cased-v1", lr=1e-04, model_max_length=512, synset_embedding_size=50):
+    def __init__(self, model="dumitrescustefan/bert-base-romanian-cased-v1", lr=3e-04, model_max_length=512, synset_embedding_size=50):
         super(WSD, self).__init__()
 
         self.lr = lr
@@ -34,10 +34,9 @@ class WSD(pl.LightningModule):
         hidden_size = self.get_hidden_size()
         print(f"\tDetected hidden size is {hidden_size}")
 
-        self.mixer = nn.Linear(hidden_size, synset_embedding_size)
+        self.mixer = nn.Linear(4*hidden_size, synset_embedding_size)
         self.synset_embedding = nn.Embedding(num_embeddings=len(self.synset2id), embedding_dim=synset_embedding_size, padding_idx=0)
 
-        self.loss_fct = MSELoss()
         self.cos = nn.CosineSimilarity(dim=1, eps=1e-6)
 
         # add pad token
@@ -82,21 +81,31 @@ class WSD(pl.LightningModule):
     def predict(self, text_prefix, text, text_suffix, synset_ids) -> str:
         pass
 
-    def forward(self, text, word_positions, choices):
+    def forward(self, prefix, word, suffix, sentence_with_special_tokens, word_positions, choices):
         """
         text is a batch of tokenized texts (list of tokenization result objects)
         word_positions is a batch of the position of the <WORD> token (list of ints)
         choices is a batch of the choices for each text (a list of lists)
         """
-        model_output = self.transformer_model(input_ids=text["input_ids"].to(self.device), attention_mask=text["attention_mask"].to(self.device), return_dict=True)
-        sentence_embeddings = model_output.last_hidden_state # [batch_size, seq_len, hidden_size]
+        # run texts through model
+        prefix_model_output = self.transformer_model(input_ids=prefix["input_ids"].to(self.device), attention_mask=prefix["attention_mask"].to(self.device), return_dict=True).last_hidden_state # [batch_size, seq_len, hidden_size]
+        word_model_output = self.transformer_model(input_ids=word["input_ids"].to(self.device), attention_mask=word["attention_mask"].to(self.device), return_dict=True).last_hidden_state # [batch_size, seq_len, hidden_size]
+        suffix_model_output = self.transformer_model(input_ids=suffix["input_ids"].to(self.device), attention_mask=suffix["attention_mask"].to(self.device), return_dict=True).last_hidden_state # [batch_size, seq_len, hidden_size]
+        sentence_model_output = self.transformer_model(input_ids=sentence_with_special_tokens["input_ids"].to(self.device), attention_mask=sentence_with_special_tokens["attention_mask"].to(self.device), return_dict=True).last_hidden_state # [batch_size, seq_len, hidden_size]
 
         # for each sentence compute cosine with all candidate synsets
-        batch_size = sentence_embeddings.size(0)
-        # store cos values here, [batch_size, number_of_choices]
-        sims = torch.zeros((batch_size, choices.size(1)), dtype=torch.float).to(sentence_embeddings.device)
+        batch_size = sentence_model_output.size(0)
+        sims = torch.zeros((batch_size, choices.size(1)), dtype=torch.float).to(self.device) # store cos values here, [batch_size, number_of_choices]
         for i in range(batch_size): # for each sentence
-            projected_sentence_embedding = self.mixer(sentence_embeddings[i,word_positions[i],:]) # reduce to synset embedding size, [batch_size, syn_emb_size]
+            # compute sentence representation
+            prefix_embedding = torch.mean(prefix_model_output[i], dim=0) # [hidden_size]
+            word_embedding = torch.mean(word_model_output[i], dim=0)  # [hidden_size]
+            suffix_embedding = torch.mean(suffix_model_output[i], dim=0)  # [hidden_size]
+            entity_embedding = sentence_model_output[i,word_positions[i],:] # [hidden_size]
+            mixer_input = torch.cat([prefix_embedding, word_embedding, suffix_embedding, entity_embedding])
+            projected_sentence_embedding = torch.tahn(self.mixer(mixer_input)) # [syn_emb_size]
+            #----projected_sentence_embedding = self.mixer(sentence_embeddings[i,word_positions[i],:]) # reduce to synset embedding size, [batch_size, syn_emb_size]
+
             synset_embeddings = self.synset_embedding(choices[i]) # [choices, syn_emb_size]
             # repeat the sentence embedding the number of choices and compute cosinus with each embedding
             # cos ([batch_size, syn_emb], [batch_size, syn_emb]) => [batch_size]
@@ -134,13 +143,16 @@ class WSD(pl.LightningModule):
         return loss
 
     def training_step(self, batch, batch_idx):
+        prefix = batch['prefix']
+        word = batch['word']
+        suffix = batch['suffix']
         sentence_with_special_tokens = batch['sentence_with_special_tokens']
         start_entity_position_special_tokens = batch['start_entity_position_special_tokens']
         choices = batch['choices']
         target = batch['target']
 
         # get predicted sims
-        predicted_sims = self(sentence_with_special_tokens, start_entity_position_special_tokens, choices)
+        predicted_sims = self(prefix, word, suffix, sentence_with_special_tokens, start_entity_position_special_tokens, choices)
 
         # mask predicted sims
         mask = choices == 0  # true where choices are padded, false otherwise, mask has same shape as choices
@@ -168,13 +180,16 @@ class WSD(pl.LightningModule):
         self.train_loss = []
 
     def validation_step(self, batch, batch_idx):
+        prefix = batch['prefix']
+        word = batch['word']
+        suffix = batch['suffix']
         sentence_with_special_tokens = batch['sentence_with_special_tokens']
         start_entity_position_special_tokens = batch['start_entity_position_special_tokens']
         choices = batch['choices']
         target = batch['target']
 
         # get predicted sims
-        predicted_sims = self(sentence_with_special_tokens, start_entity_position_special_tokens, choices)
+        predicted_sims = self(prefix, word, suffix, sentence_with_special_tokens, start_entity_position_special_tokens, choices)
 
         # mask predicted sims
         mask = choices == 0 # true where choices are padded, false otherwise, mask has same shape as choices
