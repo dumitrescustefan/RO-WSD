@@ -3,6 +3,7 @@ import xlsxwriter
 import stanza
 import rowordnet as rwn
 
+###### TEST 
 from rowordnet import Synset
 from tqdm.autonotebook import tqdm as tqdm
 
