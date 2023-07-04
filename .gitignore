@@ -1,6 +1,6 @@
 .idea/
 model/*.json
-model/lightning_logs/
+old/model/lightning_logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
