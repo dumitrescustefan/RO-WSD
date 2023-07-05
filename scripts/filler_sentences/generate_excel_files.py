@@ -4,11 +4,12 @@ import xlsxwriter
 import time
 
 _LEGEND_ = "       Introduceți numele dumneavoastră, apoi completați toate celulele albastre cu câte o propoziție care sa conțină cuvântul din celula roșie, între acolade { } și cu sensul definit de celula portocalie."
-_MAXIMUM_FILE_COUNT_ = 100
+_MAXIMUM_FILE_COUNT_ = 10
 _MINIMUM_SENTENCES_PER_FILE_ = 100
 _MAX_LITERALS_ = 5000
 _INPUT_PATH_ = "scripts/filler_sentences/input/"
 _OUTPUT_PATH_ = "scripts/filler_sentences/output/"
+_LOCK_ = False # This feature is not finished
 
 # Print iterations progress
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
@@ -32,36 +33,43 @@ def generate_excel_file(data, name, literals_synsets) -> None:
     vcenter.set_align('vcenter')
     worksheet.set_column('A:XFD', None, vcenter)
 
-
     # Widen first and second column and center text
     vcenter.set_align('vcenter')
     worksheet.set_column('A:XFD', None, vcenter)
     worksheet.set_column("A:A", 25 , vcenter)
-    worksheet.set_column("B:B", 250, vcenter)
+    worksheet.set_column("B:B", 200, vcenter)
     worksheet.set_default_row(26)
     worksheet.set_row(0,50)
 
     # Colorarea
     sentence_already_there = []
     sentence_color_to_fill = []
-    count_sentences_format = workbook.add_format({ 'font_color':'gray'})
-    synset_format = workbook.add_format({ 'font_color':'gray'})
+    synset_format = workbook.add_format({ 'font_color':'#e3e3e3'})
+    synset_format.set_align('center')
+    synset_format.set_align('vcenter')
     name_color = workbook.add_format({'bold':True, 'font_color':'black', "bg_color":"#ffc2c2", "align":"vcenter"})
     name_to_fill_color = workbook.add_format({'bold':True, 'font_color':'black', "bg_color":"#ffd9d9", "align":"vcenter"})
     divider_color = workbook.add_format({'bold':True, 'bg_color':'#808080', "align":"vcenter"})
-    definition_color = workbook.add_format({'bold':True, 'font_color':'black', "bg_color":"#FFB266", "align":"vcenter"})
-    sentence_color_to_fill.append(workbook.add_format({'bold':True, "bg_color":"A9E3FF", "align":"vcenter"}))
-    sentence_color_to_fill.append(workbook.add_format({'bold':True, "bg_color":"90DBFF", "align":"vcenter"}))
-    sentence_already_there.append(workbook.add_format({'bold':True, 'bg_color':'#AFFFAF', "align":"vcenter"}))
-    sentence_already_there.append(workbook.add_format({'bold':True, 'bg_color':'#9BFF9B', "align":"vcenter"}))
-    literal_color = workbook.add_format({'bold':True, 'bg_color':'#ff5252', "align":"vcenter"})
+    definition_color = workbook.add_format({'bold':True, 'font_color':'black', "bg_color":"#FFB266", "align":"vcenter", 'text_wrap': True})
+    sentence_color_to_fill.append(workbook.add_format({'bold':True, "bg_color":"A9E3FF", "align":"vcenter", 'text_wrap': True}))
+    sentence_color_to_fill.append(workbook.add_format({'bold':True, "bg_color":"90DBFF", "align":"vcenter", 'text_wrap': True}))
+    sentence_already_there.append(workbook.add_format({'bold':True, 'bg_color':'#AFFFAF', "align":"vcenter", 'text_wrap': True}))
+    sentence_already_there.append(workbook.add_format({'bold':True, 'bg_color':'#9BFF9B', "align":"vcenter", 'text_wrap': True}))
+    literal_color = workbook.add_format({'bold':True, 'bg_color':'#ff5252', "align":"vcenter", 'text_wrap': True})
+    literal_color.set_align('center')
+
+    # Lock every cell, unlock the blank sentences cells afterwards NOT WORKING
+    if _LOCK_ == True:
+        worksheet.protect()
+        sentence_already_there[0].set_locked(False)
+        sentence_already_there[1].set_locked(False)
 
     # Adaugăm primul divider
     worksheet.write(1, 0, "", divider_color)
     worksheet.write(1, 1, "", divider_color)
 
-    # Primul rând din excel
-    worksheet.write(starting_space, 0, "Numele și Prenumele:", name_color)
+    # Rândul cu numele si prenumele
+    worksheet.write(starting_space, 0, "  Numele și Prenumele:", name_color)
     worksheet.write(starting_space, 1, "  <introduceți numele aici>", name_to_fill_color)
 
     # Pentru fiecare pereche (literal, synset) umplem fisierul excel cu blocuri de forma:
@@ -77,7 +85,7 @@ def generate_excel_file(data, name, literals_synsets) -> None:
         literal = literals_synsets[index][0]
         synset = literals_synsets[index][1]
 
-        # Filling blank sentences with color
+        # Filling blank sentences with color and unlock them
         glosa_start_row = 2 + 12*index + starting_space
         for i in range(glosa_start_row,glosa_start_row + 11):
             worksheet.write(i , 1, "", sentence_color_to_fill[i%2])
@@ -89,17 +97,18 @@ def generate_excel_file(data, name, literals_synsets) -> None:
         worksheet.write(glosa_start_row-1, 0, "", divider_color)
         worksheet.write(glosa_start_row-1, 1, "", divider_color)
 
+        
+        # Randul de pe care incepem sa scriem propozitiile
+        literal_start_row = 3 + 12*index + starting_space
+        sentence_count = len(data[literal]["synsets"][synset])
+        blank_sentence_count = 10 - sentence_count
         # Pentru fiecare synset_id introducem literal, glosa, synset si propozitiile pe pozițiile corespunzătoare
         # Synset_id este necesar pentru citirea de date
         literals_glosa = str(wn(synset).literals) + "  " + str(wn(synset).definition)
         worksheet.write(glosa_start_row, 0, literal, literal_color)
         worksheet.write(glosa_start_row + 1, 0, synset, synset_format)
+        worksheet.write(glosa_start_row + 2, 0, blank_sentence_count, synset_format)
         worksheet.write(glosa_start_row , 1, literals_glosa, definition_color)
-
-        # Randul de pe care incepem sa scriem propozitiile
-        literal_start_row = 3 + 12*index + starting_space
-
-        sentence_count = len(data[literal]["synsets"][synset])
 
         # data[literal]["synsets"][syn_id] --- Ar trebui sa aiba cel mult 9 propozitii
         '''
@@ -116,7 +125,7 @@ def generate_excel_file(data, name, literals_synsets) -> None:
         count_total_sentences_to_fill += 10 - sentence_count
 
     # In colțul stănga sus al fisierului scriem câte propoziții sunt de umplut, pentru a ține evidența voluntarilor
-    worksheet.write(0 , 0, count_total_sentences_to_fill, count_sentences_format)
+    worksheet.write(0 , 0, count_total_sentences_to_fill, synset_format)
     workbook.close()
 
 
@@ -156,8 +165,8 @@ if __name__ == "__main__":
     }
     '''
 
-    # Sortare dictionar
-    sorted_data = {k: v for k, v in sorted(data.items(), key=lambda item: item[1]['score'],reverse=True)}
+    # Sortare dictionar in functie de score
+    sorted_data = {k: v for k, v in sorted(data.items(), key=lambda item: item[1]['score'], reverse=True)}
 
     literal_cnt = _MAX_LITERALS_
     file_cnt = 1
@@ -183,8 +192,11 @@ if __name__ == "__main__":
                     file_cnt += 1
                     total_sen_cnt = 0
                     literals_synsets_list = []
-                    printProgressBar(_MAX_LITERALS_ - literal_cnt, _MAX_LITERALS_, prefix = 'Progress:', suffix = 'Complete', length = 50)
-                    #printProgressBar(file_cnt, _MAXIMUM_FILE_COUNT_, prefix = 'Progress:', suffix = 'Complete', length = 50)
+                    # Terminal ProgressBar
+                    if (_MAX_LITERALS_ - literal_cnt)/_MAX_LITERALS_ > (file_cnt/_MAXIMUM_FILE_COUNT_):
+                        printProgressBar(_MAX_LITERALS_ - literal_cnt, _MAX_LITERALS_, prefix = 'Progress:', suffix = 'Complete', length = 50)
+                    else:
+                        printProgressBar(file_cnt, _MAXIMUM_FILE_COUNT_, prefix = 'Progress:', suffix = 'Complete', length = 50)
 
                 count_sentences = len(sorted_data[literal]["synsets"][synset])
 
