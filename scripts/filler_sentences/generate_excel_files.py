@@ -1,7 +1,6 @@
 import json, os
 import rowordnet as rwn
 import xlsxwriter
-import time
 
 _LEGEND_ = "       Introduceți numele dumneavoastră, apoi completați toate celulele albastre cu câte o propoziție care sa conțină cuvântul din celula roșie, între acolade { } și cu sensul definit de celula portocalie."
 _MAXIMUM_FILE_COUNT_ = 10
@@ -10,6 +9,8 @@ _MAX_LITERALS_ = 5000
 _INPUT_PATH_ = "scripts/filler_sentences/input/"
 _OUTPUT_PATH_ = "scripts/filler_sentences/output/"
 _LOCK_ = False # This feature is not finished
+_STARTING_SPACE_ = 4
+_BLOCK_HEIGHT_ = 12
 
 # Print iterations progress
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
@@ -24,7 +25,6 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
 def generate_excel_file(data, name, literals_synsets) -> None:
 
     count_total_sentences_to_fill = 0
-    starting_space = 2
 
     # Cream xlsx-ul
     workbook = xlsxwriter.Workbook( _OUTPUT_PATH_ + name )
@@ -69,12 +69,12 @@ def generate_excel_file(data, name, literals_synsets) -> None:
     worksheet.write(1, 1, "", divider_color)
 
     # Rândul cu numele si prenumele
-    worksheet.write(starting_space, 0, "  Numele și Prenumele:", name_color)
-    worksheet.write(starting_space, 1, "  <introduceți numele aici>", name_to_fill_color)
+    worksheet.write(2, 0, "  Numele și Prenumele:", name_color)
+    worksheet.write(2, 1, "  <introduceți numele aici>", name_to_fill_color)
 
     # Pentru fiecare pereche (literal, synset) umplem fisierul excel cu blocuri de forma:
     '''
-    LITERAL  |   LITERALI:GLOSA                              <- Rândul 12*(al câtelea bloc) + starting_space + 2
+    LITERAL  |   LITERALI:GLOSA                              <- Rândul _BLOCK_HEIGHT_*(al câtelea bloc) + _STARTING_SPACE_
     _________|__________________________________________
     SYNSET   |   PROPOZITII EXISTENTE
     _________|__________________________________________
@@ -86,7 +86,7 @@ def generate_excel_file(data, name, literals_synsets) -> None:
         synset = literals_synsets[index][1]
 
         # Filling blank sentences with color and unlock them
-        glosa_start_row = 2 + 12*index + starting_space
+        glosa_start_row = _BLOCK_HEIGHT_*index + _STARTING_SPACE_
         for i in range(glosa_start_row,glosa_start_row + 11):
             worksheet.write(i , 1, "", sentence_color_to_fill[i%2])
 
@@ -97,9 +97,8 @@ def generate_excel_file(data, name, literals_synsets) -> None:
         worksheet.write(glosa_start_row-1, 0, "", divider_color)
         worksheet.write(glosa_start_row-1, 1, "", divider_color)
 
-        
         # Randul de pe care incepem sa scriem propozitiile
-        literal_start_row = 3 + 12*index + starting_space
+        literal_start_row = 1 + _BLOCK_HEIGHT_*index + _STARTING_SPACE_
         sentence_count = len(data[literal]["synsets"][synset])
         blank_sentence_count = 10 - sentence_count
         # Pentru fiecare synset_id introducem literal, glosa, synset si propozitiile pe pozițiile corespunzătoare
